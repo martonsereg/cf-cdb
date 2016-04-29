@@ -1,0 +1,135 @@
+
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "",
+  "Parameters": {
+    "KeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+
+    "InstanceType" : {
+      "Description" : "Cloudbreak EC2 instance type",
+      "Type" : "String",
+      "Default" : "m3.medium",
+      "AllowedValues" : [ "m3.medium", "m3.large", "m3.xlarge" ],
+      "ConstraintDescription" : "must be a valid EC2 instance type."
+    },
+    "Blueprint" : {
+      "Description" : "Name of the blueprint for HDP",
+      "Type" : "String",
+      "Default" : "spark-hive",
+      "AllowedValues" : [ "spark-hive", "yarn-hdfs", "storm-flume-kafla-zeppelin" ],
+      "ConstraintDescription" : "must be an existing blueprint."
+    },
+    "ClusterSize" : {
+      "Description" : "Number of nodes in HDP cluster",
+      "Type" : "Number",
+      "Default" : "5",
+      "ConstraintDescription" : "bla bla."
+    },
+    
+
+
+  },
+
+  "Mappings": {
+      "AWSRegionAMI": {
+        "us-east-1": { "ami": "ami-4d1e0f27"},
+        "us-west-2": { "ami": "ami-b724d0d7"},
+        "us-west-1": { "ami": "ami-c4a2dea4"},
+        "eu-west-1": { "ami": "ami-42820131"},
+        "eu-central-1": { "ami": "ami-cf5cbda0"},
+        "ap-southeast-1": { "ami": "ami-a6e237c5"},
+        "ap-northeast-1": { "ami": "ami-ee3d2e80"},
+        "ap-southeast-2": { "ami": "ami-73517310"},
+        "sa-east-1": { "ami": "ami-902ba4fc"}
+      }
+   },
+
+   "CloudbreakRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "AssumeRolePolicyDocument": {
+               "Version" : "2012-10-17",
+               "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                     "Service": [ "ec2.amazonaws.com" ]
+                  },
+                  "Action": [ "sts:AssumeRole" ]
+               } ]
+            },
+            "Path": "/",
+            "Policies": [ {
+               "PolicyName": "root",
+               "PolicyDocument": {
+                  "Version" : "2012-10-17",
+                  "Statement": [ {
+                     "Effect": "Allow",
+                     "Action": "*",
+                     "Resource": "*"
+                  } ]
+               }
+               } ]
+            }
+      },
+      "RootInstanceProfile": {
+         "Type": "AWS::IAM::InstanceProfile",
+         "Properties": {
+            "Path": "/",
+            "Roles": [ {
+               "Ref": "CloudbreakRole"
+            } ]
+         }
+      },
+
+   "Resources" : {
+    "Cloudbreak": {
+      "Type": "AWS::EC2::Instance",
+      "IamInstanceProfile": { "Ref" : "RootInstanceProfile" },
+      "Metadata" : {
+      },
+      "Properties": {
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionAMI", { "Ref" : "AWS::Region" }, "ami" ] },
+        "InstanceType"   : { "Ref" : "InstanceType" },
+        "SecurityGroups" : [ {"Ref" : "CloudbreakSecurityGroup"} ],
+        "KeyName"        : { "Ref" : "KeyName" },
+        "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash\n",
+          "echo alma\n",
+          ""
+        ]]}}
+      }
+    },
+
+    "CloudbreakSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable HTTP access via port 80 and SSH access",
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "3000", "ToPort" : "3001", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "8080", "ToPort" : "8080", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "8089", "ToPort" : "8089", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : "0.0.0.0/0"}
+        ]
+      }
+    }
+   },
+
+    "Outputs" : {
+    "CloudbreakURL" : {
+      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "Cloudbreak", "PublicDnsName" ]}, ":3000/"]] },
+      "Description" : "Cloudbreak UI URL"
+    },
+    "SshAccess" : {
+      "Value" : { "Fn::Join" : ["", ["ssh cloudbreak@", { "Fn::GetAtt" : [ "Cloudbreak", "PublicIp" ]} ]] },
+      "Description" : "Access the instance via ssh"
+    },
+    "CloudbreakRoleArn": {
+         "Value": {"Fn::GetAtt" : ["CloudbreakRole", "Arn"] }
+    }
+  }
+}
