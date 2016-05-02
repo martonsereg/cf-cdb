@@ -45,7 +45,7 @@
         "us-east-1": { "ami": "ami-4d1e0f27"},
         "us-west-2": { "ami": "ami-b724d0d7"},
         "us-west-1": { "ami": "ami-c4a2dea4"},
-        "eu-west-1": { "ami": "ami-42820131"},
+        "eu-west-1": { "ami": "ami-303db443"},
         "eu-central-1": { "ami": "ami-cf5cbda0"},
         "ap-southeast-1": { "ami": "ami-a6e237c5"},
         "ap-northeast-1": { "ami": "ami-ee3d2e80"},
@@ -104,9 +104,43 @@
         "KeyName"        : { "Ref" : "KeyName" },
         "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
           "#!/bin/bash\n",
-          "echo alma\n",
+          "exec > >(tee /tmp/aws-quick-start.log) 2>&1\n",
+          "set -x\n",
+          "#cat << COMMENT\n",
+          "sed -i '/^Wants/ d' /etc/systemd/system/docker.service\n",
+          "systemctl daemon-reload\n",
+          "systemctl stop docker\n",
+          "systemctl start docker\n",
+          "\n",
+          "echo wait for docker ...\n",
+          "while ! (curl -m 1 -f 127.0.0.1:2376/_ping &>/dev/null);do echo -n .; sleep 1; done\n" ,
+          "\n",
+          "export BLUEPRINT=", { "Ref" : "Blueprint" }, "\n",
+          "export CLUSTERSIZE=", { "Ref" : "ClusterSize" }, "\n",
+          "\n",
+          "cd /var/lib/cloudbreak-deployment\n",
+          "cbd init\n",
+          "cbd start\n",
+          "cfn-signal -s ", { "Ref" : "AWS::StackName" },
+          "           -r CbdSuccess",
+          "           -e 0", {"Ref" : "HDPClusterWaitHandle"}, "\n",
+          "#COMMENT\n",
           ""
         ]]}}
+      }
+    },
+
+    "HDPClusterWaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle",
+      "Properties" : { }
+    },
+
+    "HDPClusterWaitCondition" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "Cloudbreak",
+      "Properties" : {
+        "Handle" : { "Ref" : "HDPClusterWaitHandle" },
+        "Timeout" : "600"
       }
     },
 
