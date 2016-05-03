@@ -16,28 +16,7 @@
       "Default" : "m4.large",
       "AllowedValues" : [ "m4.large", "m4.xlarge", "m3.xlarge" ],
       "ConstraintDescription" : "must be a valid EC2 instance type."
-    },
-    "ClusterPrefix" : {
-      "Description" : "Prefix of the CF stack to watch and delete",
-      "Type" : "String",
-      "Default" : "marci-torlo"
-    },
-    "Blueprint" : {
-      "Description" : "Name of the blueprint for HDP",
-      "Type" : "String",
-      "Default" : "spark-hive",
-      "AllowedValues" : [ "spark-hive", "yarn-hdfs", "storm-flume-kafla-zeppelin" ],
-      "ConstraintDescription" : "must be an existing blueprint."
-    },
-    "ClusterSize" : {
-      "Description" : "Number of nodes in HDP cluster",
-      "Type" : "Number",
-      "Default" : "5",
-      "ConstraintDescription" : "bla bla."
     }
-    
-
-
   },
 
   "Mappings": {
@@ -131,107 +110,6 @@
       }
     },
 
-    "HDPCluster": {
-      "Type": "Custom::HDPCluster",
-      "Properties": {
-        "ServiceToken": { "Fn::GetAtt" : ["LinkHDPCluster", "Arn"] },
-        "ClusterName": {
-          "Ref": "ClusterPrefix"
-        }
-      }
-    },
-
-    "LambdaExecutionRole": {
-      "Type": "AWS::IAM::Role",
-      "DeletionPolicy" : "Retain",
-      "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Version": "2012-10-17",
-          "Statement": [{
-              "Effect": "Allow",
-              "Principal": {"Service": ["lambda.amazonaws.com"]},
-              "Action": ["sts:AssumeRole"]
-          }]
-        },
-        "Path": "/",
-        "Policies": [{
-          "PolicyName": "root",
-          "PolicyDocument": {
-            "Version": "2012-10-17",
-            "Statement": [{
-                "Effect": "Allow",
-                "Action": ["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents"],
-                "Resource": "arn:aws:logs:*:*:*"
-            },
-            {
-                "Effect": "Allow",
-                "Action": ["cloudformation:DescribeStacks","cloudformation:DeleteStack","ec2:*","autoscaling:*"],
-                "Resource": "*"
-            }]
-          }
-        }]
-      }
-    },
-
-    "LinkHDPCluster": {
-      "Type": "AWS::Lambda::Function",
-      "Properties": {
-        "Handler": "index.handler",
-        "Role": { "Fn::GetAtt" : ["LambdaExecutionRole", "Arn"] },
-        "Code": {
-          "ZipFile":  { "Fn::Join": ["\n", [
-            "var response = require('cfn-response');",
-            "exports.handler = function(event, context) {",
-            "    console.log('REQUEST RECEIVED:\\n', JSON.stringify(event));",
-            "    var clusterName = event.ResourceProperties.ClusterName;",
-            "    var responseData = {};",
-            "    if (clusterName) {",
-            "        if (event.RequestType == 'Delete') {",
-            "         var aws = require('aws-sdk');",
-            "         var cfn = new aws.CloudFormation();",
-            "         cfn.deleteStack({StackName: clusterName}, function(err, data) {",
-            "            if (err) {",
-            "                responseData = {Error: 'DeleteStack call failed'};",
-            "                console.log(responseData.Error + ':\\n', err);",
-            "                response.send(event, context, response.FAILED, responseData);",
-            "            }",
-            "            else {",
-            "                console.log(data)",
-            "                response.send(event, context, response.SUCCESS, responseData);",
-            "            }",
-            "         })",
-            "         return;",
-            "        }",
-            "        if (event.RequestType == 'Create') {",
-            "          var aws = require('aws-sdk');",
-            "          var cfn = new aws.CloudFormation();",
-            "          cfn.describeStacks({StackName: clusterName}, function(err, data) {",
-            "              if (err) {",
-            "                  responseData = {Error: 'DescribeStacks call failed'};",
-            "                  console.log(responseData.Error + ':\\n', err);",
-            "                  response.send(event, context, response.FAILED, responseData);",
-            "              }",
-            "              else {",
-            "                  data.Stacks[0].Outputs.forEach(function(output) {",
-            "                     responseData[output.OutputKey] = output.OutputValue;",
-            "                  });",
-            "                  response.send(event, context, response.SUCCESS, responseData);",
-            "              }",
-            "           })",
-            "        };",
-            "    } else {",
-            "        responseData = {Error: 'Stack name not specified'};",
-            "        console.log(responseData.Error);",
-            "        response.send(event, context, response.FAILED, responseData);",
-            "    }",
-            "};"
-          ]]}
-        },        
-        "Runtime": "nodejs",
-        "Timeout": "30"
-      }
-    },
-
     "CloudbreakSecurityGroup" : {
       "Type" : "AWS::EC2::SecurityGroup",
       "Properties" : {
@@ -250,14 +128,11 @@
     "Outputs" : {
     "CloudbreakURL" : {
       "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "Cloudbreak", "PublicDnsName" ]}, ":3000/"]] },
-      "Description" : "Cloudbreak UI URL"
+      "Description" : "Cloudbreak Web"
     },
     "SshAccess" : {
       "Value" : { "Fn::Join" : ["", ["ssh cloudbreak@", { "Fn::GetAtt" : [ "Cloudbreak", "PublicIp" ]} ]] },
-      "Description" : "Access the instance via ssh"
-    },
-    "CloudbreakRoleArn": {
-         "Value": {"Fn::GetAtt" : ["CloudbreakRole", "Arn"] }
+      "Description" : "SSH access to Cloudbreak"
     }
   }
 }
