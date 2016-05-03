@@ -13,8 +13,8 @@
     "InstanceType" : {
       "Description" : "Cloudbreak EC2 instance type",
       "Type" : "String",
-      "Default" : "m3.medium",
-      "AllowedValues" : [ "m3.medium", "m3.large", "m3.xlarge" ],
+      "Default" : "m4.large",
+      "AllowedValues" : [ "m4.large", "m4.xlarge", "m3.xlarge" ],
       "ConstraintDescription" : "must be a valid EC2 instance type."
     },
     "ClusterPrefix" : {
