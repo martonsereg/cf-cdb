@@ -7,6 +7,7 @@
     "KeyName": {
       "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
       "Type": "AWS::EC2::KeyPair::KeyName",
+      "MinLength" : "1",
       "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
     },
 
@@ -15,7 +16,9 @@
       "Type" : "String",
       "NoEcho": "true",
       "MinLength" : "6",
-      "ConstraintDescription" : "must be at least 6 characters long"
+      "MaxLength" : "30",
+      "ConstraintDescription" : "must be at least 6 characters long, and must contain a lowercase letter and a number",
+      "AllowedPattern" : "^(?=.*\\d)(?=.*[a-z])(?!.*\\s).{6,30}$"
     },
 
     "CbdVersion" : {
