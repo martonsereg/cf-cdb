@@ -10,13 +10,40 @@
       "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
     },
 
-    "InstanceType" : {
-      "Description" : "Cloudbreak EC2 instance type",
+    "AdminPassword" : {
+      "Description" : "Admin password for Cloudbreak",
       "Type" : "String",
-      "Default" : "m4.large",
-      "AllowedValues" : [ "m4.large", "m4.xlarge", "m3.xlarge" ],
-      "ConstraintDescription" : "must be a valid EC2 instance type."
+      "NoEcho": "true",
+      "MinLength" : "6",
+      "ConstraintDescription" : "must be at least 6 characters long"
+    },
+
+    "CbdVersion" : {
+      "Description" : "cbd version to test",
+      "Type" : "String",
+      "Default" : "",
+      "AllowedValues" : [ "", "release-1.2.1", "master" ]
     }
+  },
+
+  "Metadata" : {
+      "AWS::CloudFormation::Interface" : {
+        "ParameterGroups" : [
+          {
+            "Label" : { "default":"Cluster Configuration" },
+            "Parameters" : [ "CbdVersion" ]
+          },
+          {
+            "Label" : { "default" : "Security Configuration" },
+            "Parameters" : [ "KeyName", "AdminPassword" ]
+          }
+        ],
+        "ParameterLabels" : {
+          "AdminPassword" : { "default" : "Admin Password" },
+          "KeyName" : { "default" : "SSH Key Name"},
+          "CbdVersion" : { "default" : "[dev] version of CBD to use"}
+        }
+      }
   },
 
   "Mappings": {
@@ -84,7 +111,7 @@
       "Properties": {
         "IamInstanceProfile": { "Ref" : "RootInstanceProfile" },
         "ImageId" : { "Fn::FindInMap" : [ "AWSRegionAMI", { "Ref" : "AWS::Region" }, "ami" ] },
-        "InstanceType"   : { "Ref" : "InstanceType" },
+        "InstanceType"   : "m4.large",
         "SecurityGroups" : [ {"Ref" : "CloudbreakSecurityGroup"} ],
         "KeyName"        : { "Ref" : "KeyName" },
         "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
@@ -94,14 +121,13 @@
           "#cat << COMMENT\n",
           "\n",
           "echo wait for docker ...\n",
-          "while ! (curl -m 1 -f 127.0.0.1:2376/_ping &>/dev/null);do echo -n .; sleep 1; done\n" ,
+          "while ! (curl -m 1 -f 127.0.0.1:2376/_ping &>/dev/null); do echo -n .; sleep 1; done\n" ,
           "\n",
-          "export BLUEPRINT=", { "Ref" : "Blueprint" }, "\n",
-          "export CLUSTERSIZE=", { "Ref" : "ClusterSize" }, "\n",
-          "\n",
+          "export CBD_VERSION=", { "Ref" : "CbdVersion" }, "\n",
           "cd /var/lib/cloudbreak-deployment\n",
           "cbd init\n",
-          "cbd start\n",
+          "cbd update $CBD_VERSION\n",
+          "cbd start-wait\n",
           "/opt/aws/bin/cfn-signal -s true -e 0 --resource Cloudbreak",
           " --stack ", {"Ref" : "AWS::StackName"}, " --region ", { "Ref" : "AWS::Region" }, "\n",
           "#COMMENT\n",
