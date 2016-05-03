@@ -101,8 +101,42 @@
          }
       },
 
+      "CredentialRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "AssumeRolePolicyDocument": {
+               "Version" : "2012-10-17",
+               "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                     "AWS": { "Fn::Join" : ["", [ "arn:aws:iam::", { "Ref" : "AWS::AccountId" }, ":root" ]] }
+                  },
+                  "Action": [ "sts:AssumeRole" ],
+                  "Condition": {
+                    "StringEquals": {
+                      "sts:ExternalId": "provision-ambari"
+                    }
+                  }
+               } ]
+            },
+            "Path": "/",
+            "Policies": [ {
+               "PolicyName": "root",
+               "PolicyDocument": {
+                  "Version" : "2012-10-17",
+                  "Statement": [ {
+                     "Effect": "Allow",
+                     "Action": "*",
+                     "Resource": "*"
+                  } ]
+               }
+               } ]
+            }
+      },
+
     "Cloudbreak": {
       "Type": "AWS::EC2::Instance",
+      "DependsOn": "CredentialRole",
       "CreationPolicy": {
         "ResourceSignal": {
         "Count": 1,
@@ -126,12 +160,15 @@
           "echo wait for docker ...\n",
           "while ! (curl -m 1 -f 127.0.0.1:2376/_ping &>/dev/null); do echo -n .; sleep 1; done\n",
           "\n",
+          "export CREDENTIAL_ROLE_ARN=", { "Fn::GetAtt" : [ "CredentialRole" , "Arn" ] }, "\n",
+          "echo $CREDENTIAL_ROLE_ARN\n",
           "export CBD_VERSION=", { "Ref" : "CbdVersion" }, "\n",
           "cd /var/lib/cloudbreak-deployment\n",
           "cbd init\n",
           "echo 'export UAA_DEFAULT_USER_PW=" , { "Ref" : "AdminPassword" }, "' >> Profile\n",
           "cbd update $CBD_VERSION\n",
           "cbd start-wait\n",
+          "echo credential create --AWS --name aws-access --roleArn arn:aws:iam::755047402263:role/poc27-CredentialRole-1M16MC410HO97 --sshKeyString '<ssh-pub>' |cbd util cloudbreak-shell-quiet",
           "/opt/aws/bin/cfn-signal -s true -e 0 --resource Cloudbreak",
           " --stack ", {"Ref" : "AWS::StackName"}, " --region ", { "Ref" : "AWS::Region" }, "\n",
           "#COMMENT\n",
