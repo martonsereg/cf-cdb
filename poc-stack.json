@@ -81,7 +81,7 @@
                   "Version" : "2012-10-17",
                   "Statement": [ {
                      "Effect": "Allow",
-                     "Action": "*",
+                     "Action": [ "sts:AssumeRole" ],
                      "Resource": "*"
                   } ]
                }
@@ -121,11 +121,12 @@
           "#cat << COMMENT\n",
           "\n",
           "echo wait for docker ...\n",
-          "while ! (curl -m 1 -f 127.0.0.1:2376/_ping &>/dev/null); do echo -n .; sleep 1; done\n" ,
+          "while ! (curl -m 1 -f 127.0.0.1:2376/_ping &>/dev/null); do echo -n .; sleep 1; done\n",
           "\n",
           "export CBD_VERSION=", { "Ref" : "CbdVersion" }, "\n",
           "cd /var/lib/cloudbreak-deployment\n",
           "cbd init\n",
+          "echo 'export UAA_DEFAULT_USER_PW=" , { "Ref" : "AdminPassword" }, "' >> Profile\n",
           "cbd update $CBD_VERSION\n",
           "cbd start-wait\n",
           "/opt/aws/bin/cfn-signal -s true -e 0 --resource Cloudbreak",
