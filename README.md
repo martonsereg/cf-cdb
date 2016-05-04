@@ -1,1 +1,2 @@
-# cf-link-poc
+# Launch stack:
+<a class="ulink" href="https://console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/new?stackName=CloudbreakSample&amp;templateURL=https://s3-eu-west-1.amazonaws.com/cloudbreak-cloudformation/cloudbreak-advanced.template" target="_blank"><span class="inlinemediaobject"><img src="https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png"></span></a>
