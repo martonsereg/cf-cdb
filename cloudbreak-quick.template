@@ -1,0 +1,194 @@
+
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "",
+  "Parameters": {
+
+    "KeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "MinLength" : "1",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    },
+
+    "AdminPassword" : {
+      "Description" : "Admin password for Cloudbreak",
+      "Type" : "String",
+      "NoEcho": "true",
+      "MinLength" : "6",
+      "MaxLength" : "30",
+      "ConstraintDescription" : "must be at least 6 characters long, and must contain a lowercase letter and a number",
+      "AllowedPattern" : "^(?=.*\\d)(?=.*[a-z])(?!.*\\s).{6,30}$"
+    },
+
+
+    "StackVersion" : {
+      "Description" : "HDP Stack Version",
+      "Type" : "String",
+      "Default" : "HDP 2.4 + Hadoop 2.7.2",
+      "AllowedValues" : [ "HDP 2.4 + Hadoop 2.7.2" ]
+    },
+    "WorkloadType" : {
+      "Description" : "Workload type for HDP cluster",
+      "Type" : "String",
+      "Default" : "EDW",
+      "AllowedValues" : [ "EDW", "Data Science" ]
+    },
+    "ClusterSize" : {
+      "Description" : "Number of worker nodes in HDP cluster",
+      "Type" : "Number",
+      "Default" : "3",
+      "MinValue" : "1",
+      "MaxValue" : "100",
+      "ConstraintDescription" : "Must be between 1 and 100."
+    },
+    "InstanceType" : {
+      "Description" : "Instance type of worker nodes",
+      "Type" : "String",
+      "Default" : "m4.large",
+      "AllowedValues" : [ "m4.large", "m4.xlarge", "m4.2xlarge" ]
+    }
+  },
+
+  "Metadata" : {
+      "AWS::CloudFormation::Interface" : {
+        "ParameterGroups" : [
+          {
+            "Label" : { "default" : "Security Configuration" },
+            "Parameters" : [ "KeyName", "AdminPassword" ]
+          },
+          {
+            "Label" : { "default" : "Cluster Configuration" },
+            "Parameters" : [ "StackVersion", "WorkloadType", "ClusterSize", "InstanceType" ]
+          }
+        ],
+        "ParameterLabels" : {
+          "AdminPassword" : { "default" : "Admin Password" },
+          "KeyName" : { "default" : "SSH Key Name"},
+          "StackVersion" : { "default" : "Stack Version" },
+          "WorkloadType" : { "default" : "Workload Type" },
+          "ClusterSize" : { "default" : "Worker Nodes" },
+          "InstanceType" : { "default" : "Instance Type" }
+        }
+      }
+  },
+
+  "Mappings": {
+      "AWSRegionAMI": {
+        "us-east-1": { "ami": "ami-5e20c033"},
+        "us-west-2": { "ami": "ami-24fb0944"},
+        "us-west-1": { "ami": "ami-7a08711a"},
+        "eu-west-1": { "ami": "ami-247df557"},
+        "eu-central-1": { "ami": "ami-d97f9db6"},
+        "ap-southeast-1": { "ami": "ami-9338eff0"},
+        "ap-northeast-1": { "ami": "ami-f1a74290"},
+        "ap-southeast-2": { "ami": "ami-253a1646"},
+        "sa-east-1": { "ami": "ami-4a5fd626"} 
+      }
+   },
+
+   "Resources" : {
+
+    "CloudbreakRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "AssumeRolePolicyDocument": {
+               "Version" : "2012-10-17",
+               "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                     "Service": [ "ec2.amazonaws.com" ]
+                  },
+                  "Action": [ "sts:AssumeRole" ]
+               } ]
+            },
+            "Path": "/",
+            "Policies": [ {
+               "PolicyName": "root",
+               "PolicyDocument": {
+                  "Version" : "2012-10-17",
+                  "Statement": [ {
+                     "Effect": "Allow",
+                     "Action": [ "sts:AssumeRole" ],
+                     "Resource": "*"
+                  } ]
+               }
+               } ]
+            }
+      },
+      "RootInstanceProfile": {
+         "Type": "AWS::IAM::InstanceProfile",
+         "Properties": {
+            "Path": "/",
+            "Roles": [ {
+               "Ref": "CloudbreakRole"
+            } ]
+         }
+      },
+
+    "WaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle"
+    },
+
+    "WaitCondition" : {
+       "Type" : "AWS::CloudFormation::WaitCondition",
+       "DependsOn" : "Cloudbreak",
+       "Properties" : {
+          "Handle"  : { "Ref" : "WaitHandle" },
+          "Timeout" : 600
+       }
+    },        
+
+    "Cloudbreak": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "IamInstanceProfile": { "Ref" : "RootInstanceProfile" },
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionAMI", { "Ref" : "AWS::Region" }, "ami" ] },
+        "InstanceType"   : "m4.large",
+        "SecurityGroups" : [ {"Ref" : "CloudbreakSecurityGroup"} ],
+        "KeyName"        : { "Ref" : "KeyName" },
+        "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash\n",
+          "exec > >(tee /var/log/cbd-quick-start.log) 2>&1\n",
+          "set -x\n",
+          "#cat << COMMENT\n",
+          "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+          "/usr/bin/cfn-signal -s true -e 0 --id ambariUrl --data 'http://ambari-dns:8080' '", { "Ref" : "WaitHandle" }, "'\n",
+          "#COMMENT\n",
+          ""
+
+        ]]}}
+      }
+    },
+
+    "CloudbreakSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable HTTP access via port 80 and SSH access",
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "3000", "ToPort" : "3001", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "8080", "ToPort" : "8080", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "8089", "ToPort" : "8089", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : "0.0.0.0/0"}
+        ]
+      }
+    }
+   },
+
+  "Outputs" : {
+    "CloudbreakURL" : {
+      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "Cloudbreak", "PublicDnsName" ]}, ":3000/"]] },
+      "Description" : "Cloudbreak UI URL"
+    },
+    "SshAccess" : {
+      "Value" : { "Fn::Join" : ["", ["ssh cloudbreak@", { "Fn::GetAtt" : [ "Cloudbreak", "PublicIp" ]} ]] },
+      "Description" : "Access the instance via ssh"
+    },
+    "AmbariURL" : {
+      "Value" : { "Fn::GetAtt" : [ "WaitCondition", "Data" ]},
+      "Description" : "Ambari URL"
+    }
+  }
+}
+
