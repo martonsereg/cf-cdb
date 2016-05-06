@@ -19,6 +19,32 @@
       "MaxLength" : "30",
       "ConstraintDescription" : "must be at least 6 characters long, and must contain a lowercase letter and a number",
       "AllowedPattern" : "^(?=.*\\d)(?=.*[a-z])(?!.*\\s).{6,30}$"
+    },
+    "StackVersion" : {
+      "Description" : "HDP Stack Version",
+      "Type" : "String",
+      "Default" : "HDP 2.4 + Hadoop 2.7.2",
+      "AllowedValues" : [ "HDP 2.4 + Hadoop 2.7.2" ]
+    },
+    "WorkloadType" : {
+      "Description" : "Workload type for HDP cluster",
+      "Type" : "String",
+      "Default" : "hdp-small-default",
+      "AllowedValues" : [ "hdp-spark-cluster", "hdp-small-default", "hdp-streaming-cluster" ]
+    },
+    "ClusterSize" : {
+      "Description" : "Number of worker nodes in HDP cluster",
+      "Type" : "Number",
+      "Default" : "3",
+      "MinValue" : "1",
+      "MaxValue" : "100",
+      "ConstraintDescription" : "Must be between 1 and 100."
+    },
+    "InstanceType" : {
+      "Description" : "Instance type of worker nodes",
+      "Type" : "String",
+      "Default" : "m4.large",
+      "AllowedValues" : [ "m4.large", "m4.xlarge", "m4.2xlarge" ]
     }
   },
 
@@ -28,11 +54,19 @@
           {
             "Label" : { "default" : "Security Configuration" },
             "Parameters" : [ "KeyName", "AdminPassword" ]
+          },
+          {
+            "Label" : { "default" : "Cluster Configuration" },
+            "Parameters" : [ "StackVersion", "WorkloadType", "ClusterSize", "InstanceType" ]
           }
         ],
         "ParameterLabels" : {
           "AdminPassword" : { "default" : "Admin Password" },
-          "KeyName" : { "default" : "SSH Key Name"}
+          "KeyName" : { "default" : "SSH Key Name"},
+          "StackVersion" : { "default" : "Stack Version" },
+          "WorkloadType" : { "default" : "Workload Type" },
+          "ClusterSize" : { "default" : "Worker Nodes" },
+          "InstanceType" : { "default" : "Instance Type" }
         }
       }
   },
@@ -126,12 +160,6 @@
     "Cloudbreak": {
       "Type": "AWS::EC2::Instance",
       "DependsOn": "CredentialRole",
-      "CreationPolicy": {
-        "ResourceSignal": {
-        "Count": 1,
-        "Timeout": "PT60M"
-        }
-      },
       "Metadata" : {
       },
       "Properties": {
@@ -156,14 +184,33 @@
           "while ! (curl -m 1 -f 127.0.0.1:2376/_ping &>/dev/null); do echo -n .; sleep 1; done\n",
           "\n",
           "export CREDENTIAL_ROLE_ARN=", { "Fn::GetAtt" : [ "CredentialRole" , "Arn" ] }, "\n",
+          "export BLUEPRINT=", { "Ref" : "WorkloadType" }, "\n",
+          "export CLUSTER_SIZE=", { "Ref" : "ClusterSize" }, "\n",
+          "export INSTANCE_TYPE=", { "Ref" : "InstanceType" }, "\n",
+          "export ADMIN_PASSWORD=", { "Ref" : "AdminPassword" }, "\n",
           "cd /var/lib/cloudbreak-deployment\n",
           "cbd init\n",
           "echo 'export UAA_DEFAULT_USER_PW=" , { "Ref" : "AdminPassword" }, "' >> Profile\n",
           "cbd start-wait\n",
-          "echo \"credential create --AWS --name aws-access --roleArn $CREDENTIAL_ROLE_ARN --sshKeyUrl http://169.254.169.254/latest/meta-data/public-keys/0/openssh-key\" | cbd util cloudbreak-shell-quiet\n",
+          "cat > /tmp/cluster_create << EOF\n",
+          "credential create --AWS --name aws-access --roleArn $CREDENTIAL_ROLE_ARN --sshKeyUrl http://169.254.169.254/latest/meta-data/public-keys/0/openssh-key\n",
+          "template create --AWS --name worker-node --instanceType $INSTANCE_TYPE --volumeCount 2 --volumeSize 500 --volumeType gp2\n",
+          "credential select --name aws-access\n",
+		  "blueprint select --name $BLUEPRINT\n",
+		  "instancegroup configure --instanceGroup cbgateway --nodecount 1 --templateName worker-node\n",
+		  "instancegroup configure --instanceGroup host_group_master_1 --nodecount 1 --templateName worker-node\n",
+		  "instancegroup configure --instanceGroup host_group_master_2 --nodecount 1 --templateName worker-node\n",
+		  "instancegroup configure --instanceGroup host_group_master_3 --nodecount 1 --templateName worker-node\n",
+		  "instancegroup configure --instanceGroup host_group_slave_1 --nodecount $CLUSTER_SIZE --templateName worker-node\n",
+		  "instancegroup configure --instanceGroup host_group_client_1 --nodecount 1 --templateName worker-node\n",
+		  "network select --name default-aws-network\n",
+ 		  "securitygroup select --name all-services-port\n",
+		  "stack create --name almafa2 --region ", { "Ref" : "AWS::Region" }, "\n",
+		  "cluster create --wait yes --userName admin --password $ADMIN_PASSWORD\n",
+          "EOF\n",
+          "cat /tmp/cluster_create | cbd util cloudbreak-shell-quiet\n",
           "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
-          "/usr/bin/cfn-signal -s true -e 0 --resource Cloudbreak",
-          " --stack ", {"Ref" : "AWS::StackName"}, " --region ", { "Ref" : "AWS::Region" }, "\n",
+          "/usr/bin/cfn-signal -s true -e 0 --id ambariUrl --data 'http://ambari-dns:8080' '", { "Ref" : "ClusterWaitHandle" }, "'\n",
           "#COMMENT\n",
           ""
 
@@ -171,6 +218,18 @@
       }
     },
 
+    "ClusterWaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle"
+    },
+
+    "ClusterWaitCondition" : {
+       "Type" : "AWS::CloudFormation::WaitCondition",
+       "DependsOn" : "Cloudbreak",
+       "Properties" : {
+          "Handle"  : { "Ref" : "ClusterWaitHandle" },
+          "Timeout" : 3600
+       }
+    },
 
     "CloudbreakSecurityGroup" : {
       "Type" : "AWS::EC2::SecurityGroup",
@@ -195,6 +254,10 @@
     "SshAccess" : {
       "Value" : { "Fn::Join" : ["", ["ssh cloudbreak@", { "Fn::GetAtt" : [ "Cloudbreak", "PublicIp" ]} ]] },
       "Description" : "Access the instance via ssh"
+    },
+    "AmbariURL" : {
+      "Value" : { "Fn::GetAtt" : [ "ClusterWaitCondition", "Data" ]},
+      "Description" : "Ambari URL"
     }
   }
 }
