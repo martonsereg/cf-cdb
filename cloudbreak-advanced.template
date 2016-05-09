@@ -39,15 +39,15 @@
 
   "Mappings": {
       "AWSRegionAMI": {
-        "us-east-1": { "ami": "ami-5e20c033"},
-        "us-west-2": { "ami": "ami-24fb0944"},
-        "us-west-1": { "ami": "ami-7a08711a"},
-        "eu-west-1": { "ami": "ami-247df557"},
-        "eu-central-1": { "ami": "ami-d97f9db6"},
-        "ap-southeast-1": { "ami": "ami-9338eff0"},
-        "ap-northeast-1": { "ami": "ami-f1a74290"},
-        "ap-southeast-2": { "ami": "ami-253a1646"},
-        "sa-east-1": { "ami": "ami-4a5fd626"} 
+        "us-east-1": { "ami": "ami-4d1e0f27"},
+         "us-west-2": { "ami": "ami-7c42b11c"},
+         "us-west-1": { "ami": "ami-c4a2dea4"},
+         "eu-west-1": { "ami": "ami-303db443"},
+         "eu-central-1": { "ami": "ami-cf5cbda0"},
+         "ap-southeast-1": { "ami": "ami-a6e237c5"},
+         "ap-northeast-1": { "ami": "ami-ee3d2e80"},
+         "ap-southeast-2": { "ami": "ami-73517310"},
+         "sa-east-1": { "ami": "ami-902ba4fc"}
       }
    },
 
