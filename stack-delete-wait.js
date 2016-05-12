@@ -93,6 +93,7 @@ pollUntilDeleted = function(stacks) {
 exports.handler = function(event, context) {
     console.log('REQUEST RECEIVED:\\n', JSON.stringify(event));
     var clusterName = event.ResourceProperties.ClusterName;
+    var response = require('cfn-response');
     var responseData = {};
     if (clusterName) {
         if (event.RequestType == 'Delete') {
