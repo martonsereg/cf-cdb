@@ -157,6 +157,14 @@
             }
       },
 
+    "LambdaBucket" : {
+      "Type" : "AWS::S3::Bucket",
+      "Properties" : {
+        "AccessControl" : "PublicRead",
+        "BucketName" : "cloudbreak-lambda"
+      }
+    },
+
     "Cloudbreak": {
       "Type": "AWS::EC2::Instance",
       "DependsOn": "CredentialRole",
@@ -235,18 +243,72 @@
        }
     },
 
-    "LinkHDPCluster": {
+    "LambdaFunctionUploaderFunction": {
       "Type": "AWS::Lambda::Function",
       "Properties": {
         "Handler": "index.handler",
         "Role": { "Fn::GetAtt" : ["LambdaExecutionRole", "Arn"] },
         "Code": {
           "ZipFile":  { "Fn::Join": ["\n", [
-            "isCloudbreakTag=function(e){return function(n){return\"CloudbreakClusterName\"===n.Key&&n.Value===e}},isHDPCluster=function(e){return function(n){return n.Tags.filter(isCloudbreakTag(e)).length>0}},wait=function(){return new Promise(function(e,n){setTimeout(function(){e()},3e3)})},deleteStacks=function(e){return new Promise(function(n,t){Promise.all(e.map(deleteStack)).then(function(){console.log(\"Called delete on all stacks.\"),n()})[\"catch\"](function(){console.log(\"Delete call failed on one or more stacks.\"),t()})})},deleteStack=function(e){return new Promise(function(n,t){var o=require(\"aws-sdk\"),l=new o.CloudFormation;l.deleteStack({StackName:e.StackName},function(e,o){e?(console.log(\"Delete failed:\"),console.log(e),t()):(console.log(\"Delete called successfully.\"),n())})})},describeStacks=function(e){return new Promise(function(n,t){wait().then(function(){Promise.all(e.map(describeStack)).then(function(){console.log(\"All stacks were deleted.\"),n()})[\"catch\"](function(){console.log(\"There are still running stacks.\"),t()})})})},describeStack=function(e){return new Promise(function(n,t){var o=require(\"aws-sdk\"),l=new o.CloudFormation;l.describeStacks({StackName:e.StackName},function(e,o){e?(console.log(\"Describe failed:\"),console.log(e),n()):(console.log(\"Describe was successful.\"),t())})})},pollUntilDeleted=function(e){return describeStacks(e).then(function(){return\"deleted\"})[\"catch\"](function(){return pollUntilDeleted(e)})},exports.handler=function(e,n){console.log(\"REQUEST RECEIVED:\\n\",JSON.stringify(e));var t=e.ResourceProperties.ClusterName,o=require(\"cfn-response\"),l={};if(t){if(\"Delete\"==e.RequestType){var r=require(\"aws-sdk\"),c=new r.CloudFormation;return void c.describeStacks({},function(r,c){if(r)l={Error:\"DescribeStacks call failed\"},console.log(l.Error+\":\\n\",r),o.send(e,n,o.FAILED,l);else{var s=c.Stacks.filter(isHDPCluster(t));console.log(\"Found \"+s.length+\" stacks.\"),deleteStacks(s).then(function(){return pollUntilDeleted(s)}).then(function(t){console.log(\"result:\",t),o.send(e,n,o.SUCCESS,l)})[\"catch\"](function(){o.send(e,n,o.FAILED,l)})}})}\"Create\"==e.RequestType&&o.send(e,n,o.SUCCESS,l)}else l={Error:\"Cluster name not specified\"},console.log(l.Error),o.send(e,n,o.FAILED,l)};"
+              "var http = require('http');",
+              "var fs = require('fs');",
+              "var aws = require('aws-sdk');",
+              "var s3 = new aws.S3({ apiVersion: '2006-03-01' });",
+              "exports.handler = function(event, context) {",
+              "    var cfnResponse = require('cfn-response');",
+              "    var responseData = {};",
+              "    if (event.RequestType == 'Create') {",
+              "        var file = fs.createWriteStream(\"/tmp/hdp-link.zip\");",
+              "        var request = http.get(\"http://s3-us-west-2.amazonaws.com/hdp-lambda/hdp-link.zip\", function(response) {",
+              "          response.pipe(file);",
+              "          var body = fs.readFile('/tmp/hdp-link.zip', function(e, body){",
+              "           var s3obj = new aws.S3({params: {Bucket: 'cloudbreak-lambda', Key: 'hdp-link.zip'}});",
+              "           s3obj.upload({Body: body}).",
+              "             on('httpUploadProgress', function(evt) { console.log(evt); }).",
+              "             send(function(err, data) {",
+              "               cfnResponse.send(event, context, cfnResponse.SUCCESS, responseData);",
+              "               console.log(err, data)",
+              "             });",
+              "          });",
+              "       })",
+              "    } else if (event.RequestType == 'Delete') {",
+              "        var params = {",
+              "              Bucket: 'cloudbreak-lambda',",
+              "              Key: 'hdp-link.zip'",
+              "        };",
+              "        s3.deleteObject(params, function(err, data) {",
+              "            console.log(\"Deleted\")",
+              "            cfnResponse.send(event, context, cfnResponse.SUCCESS, responseData);",
+              "        });",
+              "    }",
+              "}"
           ]]}
         },        
-        "Runtime": "nodejs4.3",
+        "Runtime": "nodejs",
         "Timeout": "30"
+      }
+    },
+
+    "LambdaFunctionUploader": {
+      "Type": "Custom::LambdaFunctionUploader",
+      "DependsOn": "LambdaBucket",
+      "Properties": {
+        "ServiceToken": { "Fn::GetAtt" : ["LambdaFunctionUploaderFunction", "Arn"] }
+      }
+    },
+
+    "LinkHDPCluster": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": "LambdaFunctionUploader",
+      "Properties": {
+        "Handler": "stack-delete-wait.handler",
+        "Role": { "Fn::GetAtt" : ["LambdaExecutionRole", "Arn"] },
+        "Code": {
+          "S3Bucket" : "cloudbreak-lambda",
+          "S3Key" : "hdp-link.zip"
+        },        
+        "Runtime": "nodejs4.3",
+        "Timeout": "300"
       }
     },
 
@@ -281,7 +343,7 @@
             },
             {
                 "Effect": "Allow",
-                "Action": ["cloudformation:DescribeStacks","cloudformation:DeleteStack","ec2:*","autoscaling:*"],
+                "Action": ["cloudformation:DescribeStacks","cloudformation:DeleteStack","s3:*","ec2:*","autoscaling:*"],
                 "Resource": "*"
             }]
           }
